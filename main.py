@@ -125,6 +125,14 @@ async def main():
         merged_energy_data = merged_energy_data.merge(device_energy_data, on='time', how='outer')
     merged_energy_data = merged_energy_data.fillna(0)
 
+    # Remove measured power from the total power
+    CL1_col = "E1" # normal power usage is summed to this column
+    CL2_col = "E2" # solar power usage is summed to this column
+    for col in merged_energy_data.columns:
+        if col != "time" and col != CL1_col and col != CL2_col:
+            merged_energy_data[CL1_col] -= merged_energy_data[col]
+
+
     current_time = datetime.now().timestamp()
 
     # plot the last 7 days
