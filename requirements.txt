@@ -1,0 +1,5 @@
+numpy
+pandas
+tapo
+matplotlib
+requests_oauthlib
