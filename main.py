@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from tapo import ApiClient
 from tapo.requests import EnergyDataInterval
 from Ovo import Ovo
+import matplotlib
 import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO)
@@ -69,11 +70,15 @@ def plotUsage(df, min_time=None, max_time=None):
         df = df[df["time"] >= min_time]
     if max_time is not None:
         df = df[df["time"] <= max_time]
+    max_time = df["time"].max()
+    min_time = df["time"].min()
 
+    # Convert min_time and max_time to datetime
+    min_time = pd.to_datetime(min_time, unit='s') + timedelta(hours=10) # Adjust for timezone
+    max_time = pd.to_datetime(max_time, unit='s') + timedelta(hours=10) # Adjust for timezone
     fig, ax = plt.subplots(figsize=(20,10))
 
-    #ind = np.arange(len(df))
-    date_time = pd.to_datetime(df['time'], unit='s')
+    date_time = pd.to_datetime(df['time'], unit='s') + timedelta(hours=10) # Adjust for timezone
 
     bottom = np.zeros(len(df))
     for column in df.columns:
@@ -82,18 +87,17 @@ def plotUsage(df, min_time=None, max_time=None):
         p = ax.bar(date_time, df[column],0.03,bottom=bottom, label=column)
         bottom += df[column]
 
-    ax.set_title("Hourly power usage contribution")
+    ax.set_title("Hourly power usage contribution { " + str(min_time) + " to " + str(max_time) + " }")
     ax.set_xlabel("Time")
     ax.set_ylabel("Power usage (kWh)")
 
-    # Rotate the x-axis labels so they don't overlap
-    plt.xticks(rotation=45)
+    ax.xaxis.set_major_locator(matplotlib.dates.HourLocator(interval=1))
+    ax.set_xlim([min_time, max_time])
+    plt.xticks(rotation=90)
+
     ax.legend(loc="upper right")
 
     plt.show()
-
-
-
 
 async def main():
 
@@ -132,11 +136,12 @@ async def main():
         if col != "time" and col != CL1_col and col != CL2_col:
             merged_energy_data[CL1_col] -= merged_energy_data[col]
 
-
-    current_time = datetime.now().timestamp()
+    # Rename fields
+    merged_energy_data = merged_energy_data.rename(columns={CL1_col: "Unknown",CL2_col: "CL2"})
 
     # plot the last 7 days
-    plotUsage(merged_energy_data, min_time=current_time - 7*60*60*24, max_time=current_time)
+    ovo_end_time = ovo_data["time"].max() # Most likely ovo will be the last to report
+    plotUsage(merged_energy_data, min_time=ovo_end_time - timedelta(days=3).total_seconds(), max_time=ovo_end_time)
 
     #plotUsage(merged_energy_data, min_time=1737432000, max_time=1737637200)
 
