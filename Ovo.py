@@ -7,18 +7,11 @@ import bs4
 import json
 import pandas as pd
 import logging
+import pytz
+from datetime import datetime, timedelta
+import numpy as np
 
-#existing request:
-#https://login.ovoenergy.com.au/authorize
-
-#response_type: code
-#client_id: 5JHnPn71qgV3LmF3I3xX0KvfRBdROVhR
-#scope: openid profile email offline_access
-#redirect_uri: https://my.ovoenergy.com.au?login=oea
-#code_challenge
-#code_challenge_method: S256
-#audience: https://login.ovoenergy.com.au/api
-#nonce
+timezone = pytz.timezone('Australia/Brisbane')
 
 class Ovo:
 
@@ -125,14 +118,14 @@ class Ovo:
         self.token = token
 
 
-    def graph_ql_query(self, query):
+    def _graph_ql_query(self, query):
         if not self.is_logged_in:
             raise Exception("Must be logged in")
         graphql = 'https://my.ovoenergy.com.au/graphql'
         response = self.session.post(graphql, json=query, headers={'Authorization': self.session.token['access_token'],'myovo-id-token': self.session.token['id_token']})
         return response.json()
 
-    def get_hourly_data(self, account_id):
+    def getEnergyData(self, account_id, time_interval = 60*5):
         if not self.is_logged_in:
             raise Exception("Must be logged in")
         graphql = 'https://my.ovoenergy.com.au/graphql'
@@ -182,16 +175,16 @@ class Ovo:
         # combine date and time and convert to epoch
         df["time"] = pd.to_datetime(df['ReadDate'] + ' ' + df['ReadTime'])
 
+        # floor the time to the nearest interval
+        df["time"] = df["time"].dt.floor(f'{time_interval}S')
+
         # sort by time
         df = df.sort_values('time')
 
-        # adjust for timezone
-        df["time"] = df["time"] - pd.Timedelta(hours=10)
+        # adjust for timezone (using the timezone variable)
+        df["time"] = df["time"].dt.tz_localize(timezone).dt.tz_convert('UTC')
 
         df["time"] = df["time"].astype(int) // 10 ** 9
-
-        # floor to the nearest hour
-        df['time'] = df['time'] // 3600 * 3600
 
         # unique times
         unique_times = df['time'].unique()
@@ -201,10 +194,18 @@ class Ovo:
         }, index=unique_times)
         unique_registers = df['Register'].unique()
 
+        output_data = {}
         # for each register type, group by time and sum the usage
         for register in unique_registers:
             register_df = df[df['Register'] == register]
             register_df = register_df.groupby('time')
-            out_df[register] = register_df['ReadConsumption'].sum().values
+            output_data[register] = register_df['ReadConsumption'].sum().rename('energy_usage').to_frame()
 
-        return out_df
+        return output_data
+
+    def getHourlyEnergyData(self, account_id):
+        return self.getEnergyData(account_id, time_interval=60*60)
+
+    def getDailyEnergyData(self, account_id):
+        return self.getEnergyData(account_id, time_interval=60*60*24)
+
